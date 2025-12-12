@@ -1,6 +1,10 @@
+import json
+
 import bpy
 import bmesh
 from mathutils import Vector, Euler, Quaternion
+
+from .templates import COLLIDER_TEMPLATES
 from ..main.common import show_message
 from ..main.bartmoss_functions import calculate_mesh_volume
 
@@ -56,7 +60,7 @@ def draw_sphere_collider(name, collision_collection, radius, position, physmat, 
     bm = bmesh.new()
    # position = (transform['position']['X'], transform['position']['Y'], transform['position']['Z'])
     bmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=9, radius=r)
-    name = collision_shape
+    #name = collision_shape
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     mesh.update()
@@ -121,7 +125,7 @@ def draw_box_collider(name, collision_collection, half_extents, transform, physm
     return box
 
 
-def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, sampleverts, radius, height, physics_material):
+def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, sampleverts, radius, height, physics_material, target_collection):
     if collider_type == 'TERRAIN':
         show_message('Terrain colliders get generated on export.')
         return {'CANCELLED'}
@@ -129,7 +133,7 @@ def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, s
     is_edit_mode = bpy.context.object.mode == 'EDIT'
     selected_objects = context.selected_objects
     bpy.context.space_data.shading.wireframe_color_type = 'OBJECT'
-    colliderCollection = None
+    colliderCollection = None if not target_collection else bpy.data.collections[target_collection]
 
     # Check for a collection ending with ".phys"
     for collection in bpy.data.collections:
@@ -169,7 +173,7 @@ def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, s
         # Calculate the center of the bounding box
         center = (min_vertex + max_vertex) / 2
 
-        if collision_shape == 'CONVEX':
+        if collision_shape == 'CONVEX' or collision_shape == "MESH":
             if not is_edit_mode:
                 bpy.ops.object.mode_set(mode='EDIT') 
             # Get the bmesh linked to the active object
@@ -216,10 +220,15 @@ def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, s
                         bpy.ops.object.mode_set(mode='EDIT')
                         bpy.ops.mesh.convex_hull()
 
+                if collider_type == "EMBEDDED":
+                    convcol.name = f"{len(colliderCollection.objects) - 1}_{convcol.name}"
+                    if collision_shape == "MESH":
+                        convcol["_collider_raw_data"] = json.dumps(COLLIDER_TEMPLATES["Mesh"])
+                    # else: (import/export not supported yet for embedded)
+                    #     convcol["_collider_raw_data"] = json.dumps(COLLIDER_TEMPLATES["Convex"])
 
                 if not is_edit_mode:
                     bpy.ops.object.mode_set(mode='OBJECT')
-                      
       
         if collision_shape == "BOX":
             #switch to object mode
@@ -241,6 +250,10 @@ def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, s
             colliderCollection.objects.link(box)
             context.view_layer.objects.active = box
             box.select_set(True)
+
+            if collider_type == 'EMBEDDED':
+                box.name = f"{len(colliderCollection.objects)-1}_{box.name}"
+                box["_collider_raw_data"] = json.dumps(COLLIDER_TEMPLATES["Box"])
 
             # Re-enter Edit mode
             if is_edit_mode:
@@ -282,6 +295,11 @@ def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, s
             capsule.dimensions.z = float(h)
             bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
             colliderCollection.objects.link(capsule)
+
+            if collider_type == 'EMBEDDED':
+                capsule.name = f"{len(colliderCollection.objects)-1}_{capsule.name}"
+                capsule["_collider_raw_data"] = json.dumps(COLLIDER_TEMPLATES["Capsule"])
+
             # Re-enter Edit mode
             if is_edit_mode:
                 bpy.ops.object.mode_set(mode='EDIT')
@@ -303,4 +321,8 @@ def CP77CollisionGen(self, context, matchSize, collider_type, collision_shape, s
             sphere = bpy.data.objects.new(name, mesh)
             set_collider_props(sphere, shape, physics_material, collider_type)
             colliderCollection.objects.link(sphere)
+
+            if collider_type == 'EMBEDDED':
+                sphere.name = f"{len(colliderCollection.objects)-1}_{sphere.name}"
+                sphere["_collider_raw_data"] = json.dumps(COLLIDER_TEMPLATES["Sphere"])
 
